@@ -74,10 +74,9 @@ pub fn add_password(){ // Adds password to the file
     let nonce_bytes : [u8; 12] = random();
     let nonce = Nonce::from_slice(&nonce_bytes);
     let cipher = Aes256Gcm::new(&key_generator(password , hex::decode(file[1]).expect("Failed to decode")));
-    let encryptedacc = cipher.encrypt(&nonce , account.0.as_bytes()).expect("Failed to encrypt");
     let encryptedpass = cipher.encrypt(&nonce , account.1.as_bytes()).expect("Failed to encrypt");
     let aacount = Aaccount{
-        account : hex::encode(encryptedacc),
+        account : account.0,
         password : hex::encode(encryptedpass),
         nonce : hex::encode(nonce_bytes),
     };
@@ -92,25 +91,55 @@ pub fn password_view() {
     let keyfile = fs::read_to_string("key.txt").expect("Failed to read key file");
     let keyfile = keyfile.split(":").collect::<Vec<&str>>();
     let salt = hex::decode(keyfile[1]).expect("Failed to decode salt");
-    let key = key_generator(password , salt);
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
+    let key = key_generator(password, salt);
+    let _cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
     let accounts = load_from_file().expect("Failed to load accounts");
-    for account in accounts{
-        let account_name = hex::decode(&account.account).expect("Failed to decode account");
-        let password = hex::decode(&account.password).expect("Failed to decode password");
-        let nonce_bytes = hex::decode(&account.nonce).expect("Failed to decode nonce");
+
+    for account in accounts {
+        let account_name = &account.account;
+        let password = match hex::decode(&account.password) {
+            Ok(pass) => pass,
+            Err(e) => {
+                eprintln!("Failed to decode password: {:?}", e);
+                continue;
+            }
+        };
+
+        let nonce_bytes = match hex::decode(&account.nonce) {
+            Ok(nonce) => nonce,
+            Err(e) => {
+                eprintln!("Failed to decode nonce: {:?}", e);
+                continue;
+            }
+        };
+
+        if nonce_bytes.len() != 12 {
+            eprintln!("Invalid nonce length: expected 12, got {}", nonce_bytes.len());
+            continue;
+        }
+
         let nonce = Nonce::from_slice(&nonce_bytes);
         let cipher = Aes256Gcm::new(&key);
-        let a_name = cipher.decrypt(&nonce , account_name.as_ref()).expect("Failed to decrypt account name");
-        let a_password = cipher.decrypt(&nonce , password.as_ref()).expect("Failed to decrypt password");
-        println!("Account : {} , Password : {}",String::from_utf8(a_name).expect("Failed to convert to string") , String::from_utf8(a_password).expect("Failed to convert to string"));
 
 
+        let a_password = match cipher.decrypt(&nonce, password.as_ref()) {
+            Ok(pass) => pass,
+            Err(e) => {
+                eprintln!("Failed to decrypt password: {:?}", e);
+                continue;
+            }
+        };
+
+        println!(
+            "Account : {} , Password : {}",
+            account_name,
+            String::from_utf8(a_password).expect("Failed to convert to string")
+        );
     }
 }
 
 pub fn delete_password() {
-    let pass = password_test();
+    password_test();
     println!("Showing passwords");
     password_view();
     let name = cli::account_name_input();
@@ -118,31 +147,10 @@ pub fn delete_password() {
     let mut data = String::new();
     file.read_to_string(&mut data).expect("Failed to read passwords.json");
     let mut entries: Vec<Aaccount> = serde_json::from_str(&data).expect("Failed to deserialize passwords.json");
-    let keytxt = fs::read_to_string("key.txt").expect("Failed to read key file");
-    let keytxt = keytxt.split(":").collect::<Vec<&str>>();
-    let salt = hex::decode(keytxt[1]).expect("Failed to decode salt");
-    let salt = salt.to_vec();
-    let key = key_generator(pass, salt);
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
 
     let initial_len = entries.len();
-    entries.retain(|entry| {
-        let nonce_bytes = hex::decode(&entry.nonce).expect("Invalid nonce format");
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        // Attempt to decrypt the account name
-        let decrypted_account = cipher.decrypt(nonce, hex::decode(&entry.account).unwrap().as_ref());
-
-        // If decryption works and matches the target, remove it
-        match decrypted_account {
-            Ok(account_bytes) => {
-                let account = String::from_utf8(account_bytes).expect("Invalid UTF-8");
-                account != name // Keep only if account != name
-            }
-            Err(_) => true, // If decryption fails, keep the entry
-        }
-    });
+    entries.retain(|entry| entry.account != name);
 
     if entries.len() == initial_len {
         println!("Account '{}' not found.", name);
