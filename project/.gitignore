@@ -1,0 +1,27 @@
+# Ignore build artifacts
+/target/
+**/*.rs.bk
+
+# Ignore IDE/editor specific files
+/.vscode/
+/.idea/
+/*.sublime-project
+/*.sublime-workspace
+
+# Ignore temporary files
+*.tmp
+*.swp
+*.bak
+*.old
+
+# Ignore compiled libraries
+*.rlib
+
+# Ignore Cargo.lock (if you're using a library)
+Cargo.lock
+
+# Ignore the output of `cargo doc`
+/target/doc/
+
+# Ignore the output of `cargo test`
+/target/debug/
